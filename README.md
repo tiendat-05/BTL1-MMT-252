@@ -1,25 +1,35 @@
 p2p:
+
 b1:
+
 mở 3 terminal
 - terminal 1: python start_tracker.py //(port 7000)
 - terminal 2: python start_peer1.py //(port 9002)
 - terminal 3: python start_peer2.py //(port 9003)
 
 b2:
+
 postman:
+
 peer1:
+
 method: POST
+
 URL: http://127.0.0.1:9002/register
 
 Body (JSON):
+
 {
   "tracker_ip": "127.0.0.1",
   "tracker_port": 7000
 }
 
 peer2:
+
 Method: POST
+
 URL: http://127.0.0.1:9003/register
+
 Body (JSON): Dùng y hệt cục JSON ở trên.
 
 b3:

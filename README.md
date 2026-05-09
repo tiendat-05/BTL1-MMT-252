@@ -10,6 +10,7 @@ postman:
 peer1:
 method: POST
 URL: http://127.0.0.1:9002/register
+
 Body (JSON):
 {
   "tracker_ip": "127.0.0.1",

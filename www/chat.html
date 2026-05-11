@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>P2P Chat Node</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { margin-bottom: 10px; }
+        #login-section, #chat-section { margin-bottom: 20px; }
+        #chat-section { display: none; }
+        label { display: inline-block; width: 120px; }
+        input[type="text"] { width: 200px; padding: 4px; margin: 4px 0; }
+        button { padding: 6px 16px; cursor: pointer; margin-top: 10px; }
+        #messages { border: 1px solid #ccc; height: 300px; overflow-y: scroll; padding: 8px; margin: 10px 0; }
+        .msg { margin: 4px 0; }
+        .msg .from { font-weight: bold; color: #0066cc; }
+        .msg .time { color: #888; font-size: 0.85em; margin-left: 8px; }
+        #status { color: green; font-size: 0.9em; font-weight: bold;}
+        #error { color: red; font-size: 0.9em; }
+        #peers-list { border: 1px solid #ccc; padding: 8px; margin: 10px 0; min-height: 30px; background: #f9f9f9;}
+        .section-label { font-weight: bold; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h1>P2P Chat Node</h1>
+
+    <!-- CONNECT -->
+    <div id="login-section">
+        <h2>Connect to Tracker</h2>
+        <div>
+            <label>Tracker IP:</label>
+            <input type="text" id="tracker-ip" value="127.0.0.1">
+        </div>
+        <div>
+            <label>Tracker Port:</label>
+            <input type="text" id="tracker-port" value="7000">
+        </div>
+        <button onclick="doConnect()">Connect</button>
+        <div id="error"></div>
+    </div>
+
+    <!-- CHAT -->
+    <div id="chat-section">
+        <div id="status"></div>
+
+        <div class="section-label">Online Peers (from Tracker):</div>
+        <div id="peers-list">Loading...</div>
+
+        <div class="section-label">Channel: general</div>
+        <div id="messages"></div>
+
+        <div>
+            <input type="text" id="msg-input" placeholder="Type a message..." style="width:400px;"
+                   onkeypress="if(event.key==='Enter') sendMessage()">
+            <button onclick="sendMessage()">Send</button>
+            <button onclick="refreshMessages()">Refresh</button>
+        </div>
+    </div>
+
+    <script>
+        const BASE = window.location.origin; // e.g. http://127.0.0.1:9002
+        let peerName = "";
+
+        // Get peer status to see if we're already connected
+        async function checkStatus() {
+            try {
+                const resp = await fetch(BASE + "/status");
+                const data = await resp.json();
+                peerName = data.peer_name;
+                document.title = "Chat - " + peerName;
+                document.getElementById("status").textContent = "Peer Name: " + peerName + " (Port: " + data.port + ")";
+            } catch (e) {
+                console.log("Error getting status");
+            }
+        }
+        checkStatus();
+
+        // CONNECT
+        async function doConnect() {
+            const trackerIp = document.getElementById("tracker-ip").value;
+            const trackerPort = parseInt(document.getElementById("tracker-port").value);
+
+            try {
+                // Register with tracker
+                const resp = await fetch(BASE + "/register", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({tracker_ip: trackerIp, tracker_port: trackerPort})
+                });
+                
+                const data = await resp.json();
+                if (data.status === "error") {
+                    document.getElementById("error").textContent = "Connection failed: " + data.message;
+                    return;
+                }
+
+                // Show chat
+                document.getElementById("login-section").style.display = "none";
+                document.getElementById("chat-section").style.display = "block";
+                
+                refreshMessages();
+                
+                // Auto-refresh messages every 2s
+                setInterval(refreshMessages, 2000);
+            } catch (e) {
+                document.getElementById("error").textContent = "Connection error: " + e.message;
+            }
+        }
+
+        // GET MESSAGES
+        async function refreshMessages() {
+            try {
+                const resp = await fetch(BASE + "/messages");
+                const data = await resp.json();
+                const msgs = data.channels ? (data.channels.general || []) : [];
+                
+                const container = document.getElementById("messages");
+                container.innerHTML = "";
+                msgs.forEach(m => {
+                    const div = document.createElement("div");
+                    div.className = "msg";
+                    const time = m.time || "";
+                    div.innerHTML = '<span class="from">' + (m.from || "unknown") + ':</span> '
+                                  + (m.msg || "")
+                                  + '<span class="time">' + time + '</span>';
+                    container.appendChild(div);
+                });
+                container.scrollTop = container.scrollHeight;
+            } catch (e) {
+                // silently ignore
+            }
+        }
+
+        // SEND MESSAGE
+        async function sendMessage() {
+            const input = document.getElementById("msg-input");
+            const msg = input.value.trim();
+            if (!msg) return;
+
+            try {
+                await fetch(BASE + "/broadcast", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        msg: msg,
+                        channel: "general",
+                        time: new Date().toLocaleTimeString()
+                    })
+                });
+                input.value = "";
+                refreshMessages();
+            } catch (e) {
+                alert("Send failed: " + e.message);
+            }
+        }
+    </script>
+</body>
+</html>

@@ -54,7 +54,6 @@ from .dictionary import CaseInsensitiveDict
 import selectors
 sel = selectors.DefaultSelector()
 
-mode_async = "callback"
 #mode_async = "coroutine"
 mode_async = "threading"
 
@@ -93,23 +92,16 @@ def handle_client_callback(server, ip, port,conn, addr, routes):
 
 
 # Coroutine async/await for handling new client
-async def handle_client_coroutine(reader, writer):
-    """
-    Coroutine in async communication to initialize connection instance
-    then delegates the client handling logic to it.
-
-    :param reader (StreamReader): Stream reader wrapper.
-    :param write (Stream write): Stream write wrapper.
-    """
-    addr = writer.get_extra_info("peername")
-    print("[Backend] Invoke handle_client_coroutine accepted connection from {}".format(addr))
-
-    # Handle client in asynchronous mode
-    while True:
-        daemon = HttpAdapter(None, None, None, None, None)
-        await daemon.handle_client_coroutine(reader, writer)
-
 async def async_server(ip="0.0.0.0", port=7000, routes={}):
+    """
+    Start an asyncio-based server using coroutine mechanism.
+    Uses a closure to capture routes, ip, port and pass them
+    to each HttpAdapter instance per connection.
+
+    :param ip (str): IP address to bind.
+    :param port (int): Port number to listen on.
+    :param routes (dict): Dictionary of route handlers.
+    """
     print("[Backend] async_server **ASYNC** listening on port {}".format(port))
     if routes != {}:
         print("[Backend] route settings")
@@ -119,9 +111,16 @@ async def async_server(ip="0.0.0.0", port=7000, routes={}):
                isCoFunc += "**ASYNC** "
             print("   + ('{}', '{}'): {}{}".format(key[0], key[1], isCoFunc, str(value)))
 
-    async_server = await asyncio.start_server(handle_client_coroutine, ip, port)
-    async with async_server:
-        await async_server.serve_forever()
+    # Closure: capture routes/ip/port for each incoming connection
+    async def handle_client_coroutine(reader, writer):
+        addr = writer.get_extra_info("peername")
+        print("[Backend] Invoke handle_client_coroutine accepted connection from {}".format(addr))
+        daemon = HttpAdapter(ip, port, None, addr, routes)
+        await daemon.handle_client_coroutine(reader, writer)
+
+    server = await asyncio.start_server(handle_client_coroutine, ip, port)
+    async with server:
+        await server.serve_forever()
     return
 
 
@@ -157,10 +156,17 @@ def run_backend(ip, port, routes):
 def create_backend(ip, port, routes={}):
     """
     Entry point for creating and running the backend server.
+    Selects between threading mode (blocking socket + threads) and
+    coroutine mode (asyncio event loop) based on mode_async flag.
 
     :param ip (str): IP address to bind the server.
     :param port (int): Port number to listen on.
     :param routes (dict, optional): Dictionary of route handlers. Defaults to empty dict.
     """
+    global mode_async
 
-    run_backend(ip, port, routes)
+    if mode_async == "coroutine":
+        print(f"[Backend] Starting in COROUTINE mode on {ip}:{port}")
+        asyncio.run(async_server(ip, port, routes))
+    else:
+        run_backend(ip, port, routes)

@@ -127,6 +127,11 @@ class HttpAdapter:
             if isinstance(response_body, str):
                 response_body = response_body.encode()
                 
+            if response_body.startswith(b"<!DOCTYPE html>") or response_body.startswith(b"<html"):
+                resp.headers["Content-Type"] = "text/html"
+            else:
+                resp.headers["Content-Type"] = "application/json"
+
             resp._content = response_body
             response = resp.build_response_header(req) + resp._content
         else:
@@ -137,44 +142,73 @@ class HttpAdapter:
 
     async def handle_client_coroutine(self, reader, writer):
         """
-        Handle an incoming client connection using stream reader writer asynchronously.
+        Handle an incoming client connection using stream reader/writer asynchronously.
 
-        This method reads the request from the socket, prepares the request object,
-        invokes the appropriate route handler if available, builds the response,
-        and sends it back to the client.
+        This coroutine reads the HTTP request, parses it, invokes the matching
+        route handler (sync or async), builds the response, and sends it back.
 
-        :param conn (socket): The client socket connection.
-        :param addr (tuple): The client's address.
-        :param routes (dict): The route mapping for dispatching requests.
+        :param reader (StreamReader): asyncio stream reader.
+        :param writer (StreamWriter): asyncio stream writer.
         """
-        # Request handler
+        addr = writer.get_extra_info("peername")
+        print("[HttpAdapter] Invoke handle_client_coroutine connection {}".format(addr))
+
+        # Request & Response handlers
         req = self.request
-        # Response handler
         resp = self.response
 
-        print("[HttpAdapter] Invoke handle_client_coroutine connection {}".format(addr))
-        addr = writer.get_extra_info("peername")
+        # Read request data asynchronously
+        msg = await reader.read(4096)
+        if not msg:
+            writer.close()
+            return
 
-        # TODO Handle the request asynchronously
-        msg = await reader.read(1024)
+        # Parse HTTP request using self.routes (passed from backend closure)
+        req.prepare(msg.decode("utf-8"), self.routes)
+        resp.request = req
 
-
-        req.prepare(msg.decode("utf-8"), routes={})
-
-        # Handle request hook
         if req.hook:
-            #
-            # TODO: handle for App hook here
-            #
-            response = ""
+            handler = req.hook
+            kwargs = {
+                "headers": req.headers,
+                "body": req.body
+            }
 
-        # Build response
-        #print("[HttpAdapter] Start **ASYNC** build_response with type {}".format(type(req)))
-        response = resp.build_response(req)
+            # Support both sync and async handler functions
+            if inspect.iscoroutinefunction(handler):
+                response_body = await handler(**kwargs)
+            else:
+                response_body = handler(**kwargs)
 
-        # Send all the response asynchronously
+            # Handle Set-Cookie for /login endpoint
+            if req.path == "/login" and req.method == "POST":
+                try:
+                    data = json.loads(response_body)
+                    session_id = data.get("session")
+                    if session_id:
+                        resp.set_cookie("session", session_id)
+                        del data["session"]
+                        response_body = json.dumps(data).encode()
+                except:
+                    pass
+
+            if isinstance(response_body, str):
+                response_body = response_body.encode()
+
+            if response_body.startswith(b"<!DOCTYPE html>") or response_body.startswith(b"<html"):
+                resp.headers["Content-Type"] = "text/html"
+            else:
+                resp.headers["Content-Type"] = "application/json"
+
+            resp._content = response_body
+            response = resp.build_response_header(req) + resp._content
+        else:
+            response = resp.build_notfound()
+
+        # Send response asynchronously and close connection
         writer.write(response)
         await writer.drain()
+        writer.close()
 
     def extract_cookies(self, req):
         """

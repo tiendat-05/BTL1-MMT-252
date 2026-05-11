@@ -91,7 +91,23 @@ def broadcast(headers, body):
             except Exception as e:
                 print(f"Failed to send to {name}: {e}")
                 
+    # Add to local messages list
+    messages.append(msg_payload)
+
     return json.dumps({"status": "broadcast_complete"}).encode()
+
+@app.route('/messages', methods=['GET'])
+def get_messages(headers, body):
+    return json.dumps({"messages": messages}).encode()
+
+@app.route('/chat', methods=['GET'])
+def serve_chat(headers, body):
+    try:
+        with open("www/chat.html", "r", encoding="utf-8") as f:
+            html = f.read()
+        return html.encode()
+    except:
+        return b"<h1>chat.html not found</h1>"
 
 
 def create_sampleapp(ip="0.0.0.0", port=2026):

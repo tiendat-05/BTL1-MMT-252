@@ -205,6 +205,19 @@ def get_status(headers, body):
     }).encode()
 
 
+@app.route('/chat', methods=['GET'])
+def serve_chat(headers, body):
+    """
+    Serve the Chat HTML UI.
+    """
+    try:
+        with open("www/chat.html", "r", encoding="utf-8") as f:
+            html = f.read()
+        return html.encode()
+    except Exception as e:
+        return f"<h1>chat.html not found: {e}</h1>".encode()
+
+
 def create_peer(name, ip="0.0.0.0", port=9002, tracker_ip="127.0.0.1", tracker_port=7000):
     global peer_name, tracker_info
     

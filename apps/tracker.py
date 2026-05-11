@@ -41,7 +41,7 @@ def register(headers, body):
     """
     data = json.loads(body)
     name = data.get("name")
-    peers[name] = {"ip": data.get("ip"), "port": data.get("port")}
+    peers[name] = {"name": name, "ip": data.get("ip"), "port": data.get("port")}
     print(f"[Tracker] Registered peer: {name} at {data.get('ip')}:{data.get('port')}")
     return json.dumps({"status": "success", "peers": list(peers.values())}).encode()
 

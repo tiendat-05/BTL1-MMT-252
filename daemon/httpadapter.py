@@ -178,7 +178,9 @@ class HttpAdapter:
             if inspect.iscoroutinefunction(handler):
                 response_body = await handler(**kwargs)
             else:
-                response_body = handler(**kwargs)
+                # Chạy sync handler trong thread riêng để tránh block event loop
+                # (ví dụ: broadcast gọi urllib.request.urlopen() sẽ block nếu chạy trực tiếp)
+                response_body = await asyncio.to_thread(handler, **kwargs)
 
             # Handle Set-Cookie for /login endpoint
             if req.path == "/login" and req.method == "POST":

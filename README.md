@@ -1,127 +1,249 @@
-p2p:
+# AsynapRous - Asynchronous Python HTTP Framework
 
-b1:
+## Mục lục
+- [1. P2P Chat System](#1-p2p-chat-system)
+- [2. Asynchronous HTTP Server (Authentication)](#2-asynchronous-http-server-authentication)
+- [3. Reverse Proxy (Load Balancer)](#3-reverse-proxy-load-balancer)
 
-mở 3 terminal
-- terminal 1: python start_tracker.py //(port 7000)
-- terminal 2: python start_peer1.py //(port 9002)
-- terminal 3: python start_peer2.py //(port 9003)
+---
 
-b2:
+## 1. P2P Chat System
 
-postman:
+### Bước 1: Khởi chạy hệ thống (3 Terminal)
 
-peer1:
+```bash
+# Terminal 1: Tracker Server (port 7000)
+python start_tracker.py
 
-method: POST
+# Terminal 2: Peer 1 (port 9002)
+python start_peer1.py
 
-URL: http://127.0.0.1:9002/register
+# Terminal 3: Peer 2 (port 9003)
+python start_peer2.py
+```
+
+### Bước 2: Đăng ký Peer với Tracker (Postman)
+
+**Peer 1 đăng ký:**
+
+| Thuộc tính | Giá trị |
+|---|---|
+| Method | `POST` |
+| URL | `http://127.0.0.1:9002/register` |
 
 Body (JSON):
-
+```json
 {
   "tracker_ip": "127.0.0.1",
   "tracker_port": 7000
 }
+```
 
-peer2:
+**Peer 2 đăng ký:** Dùng y hệt JSON ở trên, chỉ đổi URL:
 
-Method: POST
+| Thuộc tính | Giá trị |
+|---|---|
+| Method | `POST` |
+| URL | `http://127.0.0.1:9003/register` |
 
-URL: http://127.0.0.1:9003/register
+### Bước 3: Broadcast tin nhắn (Channel: general)
 
-Body (JSON): Dùng y hệt cục JSON ở trên.
-
-b3:
-
-Gửi request bắt Peer 1 Broadcast tin nhắn:
-
-Method: POST
-
-URL: http://127.0.0.1:9002/broadcast
+| Thuộc tính | Giá trị |
+|---|---|
+| Method | `POST` |
+| URL | `http://127.0.0.1:9002/broadcast` |
 
 Body (JSON):
+```json
 {
   "msg": "Xin chao, toi la Peer 1!",
   "time": "2026-04-19"
 }
+```
 
-Terminal Peer 1 sẽ in ra log báo đang gửi tin nhắn đi (BROADCASTING...).
+**Kết quả:**
+- Terminal Peer 1 → in log `BROADCASTING...` (đang gửi)
+- Terminal Peer 2 → in log `RECEIVED...` (đã nhận từ Peer 1)
 
-Terminal Peer 2 sẽ in ra log báo nhận được tin nhắn từ Peer 1 (RECEIVED...).
+### Bước 4: Broadcast theo Channel (kênh riêng)
 
-ở broadcast:
+| Thuộc tính | Giá trị |
+|---|---|
+| Method | `POST` |
+| URL | `http://127.0.0.1:9002/broadcast` |
 
+Body (JSON):
+```json
 {
   "msg": "Ai đó rảnh làm bài tập Mạng máy tính không?",
   "channel": "hoc_tap",
   "time": "2026-04-19"
 }
+```
 
-GET http://127.0.0.1:9002/messages, bạn sẽ thấy các tin nhắn được chia ra thành từng khối riêng biệt theo tên kênh
+### Bước 5: Xem tin nhắn theo Channel
 
-Asynchronous Python HTTP Server:
+| Thuộc tính | Giá trị |
+|---|---|
+| Method | `GET` |
+| URL | `http://127.0.0.1:9002/messages` |
 
-b1: chạy python start_sampleapp.py
+**Kết quả:** Tin nhắn được chia thành từng khối riêng biệt theo tên kênh (`general`, `hoc_tap`,...).
 
-copy ip (0.0.0.0:2026)
+### Bước 6: Chat trên giao diện Web (Browser)
 
-b2: postman
+Sau khi đã đăng ký ở Bước 2, mở trình duyệt:
 
-method: POST
+- Peer 1: `http://127.0.0.1:9002/chat`
+- Peer 2: `http://127.0.0.1:9003/chat`
 
-URL: 0.0.0.0:2026/login
+**Tính năng giao diện:**
+- **Tab "General (All)"**: Broadcast tin nhắn tới tất cả peer
+- **Click vào tên peer**: Mở tab DM (Direct Message) — chat riêng P2P 1-1
+- **Online Peers**: Hiển thị danh sách peer đang online, tự động cập nhật
+- **Tắt Tracker**: 2 peer vẫn chat được (dùng cached peer list) — chứng minh P2P thật
 
-xem trong file auth.py có tên admin, user 
+### Bước 7: Demo P2P thuần (tắt Tracker)
 
-nhập API
+1. Tắt Tracker (Ctrl+C ở Terminal 1)
+2. Ở trình duyệt, 2 peer vẫn chat qua lại bình thường
+3. Log peer hiện: `"Tracker offline, using cached peer list"`
 
-JSON:
+---
+
+## 2. Asynchronous HTTP Server (Authentication)
+
+### Bước 1: Khởi chạy SampleApp
+
+```bash
+python start_sampleapp.py
+```
+
+Server chạy trên `0.0.0.0:2026`.
+
+### Bước 2: Đăng nhập (Login)
+
+| Thuộc tính | Giá trị |
+|---|---|
+| Method | `POST` |
+| URL | `http://0.0.0.0:2026/login` |
+
+Tài khoản có sẵn trong `daemon/auth.py`: `admin/123`, `user/abc`
+
+Body (JSON):
+```json
 {
-    "username": "admin",
-    "password": "123"
+  "username": "admin",
+  "password": "123"
 }
+```
 
-send
-
-kết quả:
-
+**Kết quả:**
+```json
 {
-    "message": "login success"
+  "message": "login success"
 }
+```
 
-b3: chạy method: PUT, URL: 0.0.0.0:2026/hello, JSON như trên
+Response Header sẽ có `Set-Cookie: session=<uuid>` — đây là Session-based Authentication (RFC 6265).
 
-kết quả:
+### Bước 3: Gọi API được bảo vệ
 
+| Thuộc tính | Giá trị |
+|---|---|
+| Method | `PUT` |
+| URL | `http://0.0.0.0:2026/hello` |
+
+Body (JSON):
+```json
 {
-    "msg": "hello async"
+  "username": "admin",
+  "password": "123"
 }
+```
 
-proxy
+**Kết quả:**
+```json
+{
+  "msg": "hello async"
+}
+```
 
-b1:
+> **Lưu ý:** Nếu không gửi kèm Cookie hoặc Basic Auth header, server sẽ trả về `401 Unauthorized`.
 
-chạy 4 terminal
+---
 
+## 3. Reverse Proxy (Load Balancer)
+
+### Bước 1: Khởi chạy (4 Terminal)
+
+```bash
+# Terminal 1: Backend server 1
 python start_backend.py --server-port 9001
 
+# Terminal 2: Backend server 2
 python start_backend.py --server-port 9002
 
+# Terminal 3: Backend server 3
 python start_backend.py --server-port 9003
 
+# Terminal 4: Proxy server (port 8080)
 python start_proxy.py
+```
 
-b2: postman
+### Bước 2: Gửi request qua Proxy (Postman)
 
-method: GET
+| Thuộc tính | Giá trị |
+|---|---|
+| Method | `GET` |
+| URL | `http://localhost:8080` |
 
-URL: http://localhost:8080
+**Headers:**
 
-ở headers:
+| Key | Value |
+|---|---|
+| Host | `app.local` |
 
-thêm key: Host, value: app.local
+### Kết quả
 
-send
+Bấm **Send** liên tục, quan sát Terminal 4 (Proxy) — request sẽ được phân phối luân phiên (Round Robin) tới 3 backend server:
 
--> kết quả thu về ở terminal 4, bấm send liên tục thực hiện như round robin
+```
+Request 1 → Backend 9001
+Request 2 → Backend 9002
+Request 3 → Backend 9003
+Request 4 → Backend 9001  (quay lại)
+...
+```
+
+---
+
+## Chuyển đổi chế độ Non-blocking
+
+Mở file `daemon/backend.py`, sửa dòng `mode_async`:
+
+```python
+# Chế độ 1: Multi-threading
+mode_async = "threading"
+
+# Chế độ 2: Coroutine (asyncio)
+mode_async = "coroutine"
+```
+
+---
+
+## Xử lý lỗi thường gặp
+
+### Port bị chiếm (OSError: [Errno 10048])
+```powershell
+# Tìm process đang chiếm port
+netstat -ano | Select-String "LISTENING" | Select-String ":7000"
+
+# Kill bằng PID
+Stop-Process -Id <PID> -Force
+```
+
+### Tắt tất cả server đang chạy
+```powershell
+Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
+```

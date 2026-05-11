@@ -4,21 +4,49 @@
     <meta charset="UTF-8">
     <title>P2P Chat Node</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
         h1 { margin-bottom: 10px; }
         #login-section, #chat-section { margin-bottom: 20px; }
         #chat-section { display: none; }
         label { display: inline-block; width: 120px; }
         input[type="text"] { width: 200px; padding: 4px; margin: 4px 0; }
         button { padding: 6px 16px; cursor: pointer; margin-top: 10px; }
-        #messages { border: 1px solid #ccc; height: 300px; overflow-y: scroll; padding: 8px; margin: 10px 0; }
-        .msg { margin: 4px 0; }
-        .msg .from { font-weight: bold; color: #0066cc; }
-        .msg .time { color: #888; font-size: 0.85em; margin-left: 8px; }
-        #status { color: green; font-size: 0.9em; font-weight: bold;}
+
+        #status { color: white; background: #2e7d32; padding: 8px 12px; border-radius: 6px; font-weight: bold; margin-bottom: 10px; display: inline-block; }
         #error { color: red; font-size: 0.9em; }
-        #peers-list { border: 1px solid #ccc; padding: 8px; margin: 10px 0; min-height: 30px; background: #f9f9f9;}
+
+        /* Online peers */
+        #peers-list { border: 1px solid #ccc; padding: 8px; margin: 10px 0; min-height: 30px; background: #fff; border-radius: 4px; }
+        .peer-badge { background: #e0f7e0; padding: 4px 12px; margin: 2px 4px; border-radius: 12px; display: inline-block; font-size: 0.9em; border: 1px solid #a5d6a7; cursor: pointer; }
+        .peer-badge:hover { background: #c8e6c9; }
+        .peer-badge.me { background: #bbdefb; border-color: #90caf9; cursor: default; }
+        .peer-badge.active { background: #fff9c4; border-color: #fdd835; font-weight: bold; }
+
+        /* Channel tabs */
+        #channel-tabs { margin: 10px 0 4px 0; }
+        .tab-btn { padding: 6px 16px; border: 1px solid #ccc; background: #fff; cursor: pointer; border-radius: 6px 6px 0 0; margin-right: 2px; font-size: 0.9em; }
+        .tab-btn.active { background: #2e7d32; color: white; border-color: #2e7d32; font-weight: bold; }
+        .tab-btn:hover { background: #e8e8e8; }
+        .tab-btn.active:hover { background: #2e7d32; }
+
+        /* Messages */
+        #messages { border: 1px solid #ccc; height: 300px; overflow-y: scroll; padding: 8px; margin: 0 0 10px 0; background: #fff; border-radius: 0 4px 4px 4px; }
+        .msg { margin: 6px 0; padding: 6px 10px; border-radius: 8px; max-width: 75%; clear: both; }
+        .msg.mine { background: #dcf8c6; margin-left: auto; text-align: right; }
+        .msg.other { background: #fff; border: 1px solid #e0e0e0; }
+        .msg .from { font-weight: bold; font-size: 0.85em; }
+        .msg.mine .from { color: #2e7d32; }
+        .msg.other .from { color: #1565c0; }
+        .msg .text { margin-top: 2px; }
+        .msg .time { color: #888; font-size: 0.75em; margin-top: 2px; }
+
         .section-label { font-weight: bold; margin-top: 10px; }
+
+        #send-bar { display: flex; gap: 6px; align-items: center; }
+        #msg-input { flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 1em; }
+        #send-bar button { margin-top: 0; padding: 8px 20px; background: #2e7d32; color: white; border: none; border-radius: 4px; font-size: 1em; cursor: pointer; }
+        #send-bar button:hover { background: #1b5e20; }
+        #channel-label { font-weight: bold; font-size: 0.95em; color: #333; margin-bottom: 2px; }
     </style>
 </head>
 <body>
@@ -43,37 +71,72 @@
     <div id="chat-section">
         <div id="status"></div>
 
-        <div class="section-label">Online Peers (from Tracker):</div>
+        <div class="section-label">Online Peers (click to direct message):</div>
         <div id="peers-list">Loading...</div>
 
-        <div class="section-label">Channel: general</div>
+        <div id="channel-tabs"></div>
+        <div id="channel-label"></div>
         <div id="messages"></div>
 
-        <div>
-            <input type="text" id="msg-input" placeholder="Type a message..." style="width:400px;"
+        <div id="send-bar">
+            <input type="text" id="msg-input" placeholder="Type a message..."
                    onkeypress="if(event.key==='Enter') sendMessage()">
             <button onclick="sendMessage()">Send</button>
-            <button onclick="refreshMessages()">Refresh</button>
         </div>
     </div>
 
     <script>
-        const BASE = window.location.origin; // e.g. http://127.0.0.1:9002
+        const BASE = window.location.origin;
         let peerName = "";
+        let currentChannel = "general";
+        let peersList = []; // [{name, ip, port}, ...]
 
-        // Get peer status to see if we're already connected
+        // Get peer status
         async function checkStatus() {
             try {
                 const resp = await fetch(BASE + "/status");
                 const data = await resp.json();
                 peerName = data.peer_name;
                 document.title = "Chat - " + peerName;
-                document.getElementById("status").textContent = "Peer Name: " + peerName + " (Port: " + data.port + ")";
-            } catch (e) {
-                console.log("Error getting status");
-            }
+                document.getElementById("status").textContent = "You are: " + peerName + " (Port: " + data.port + ")";
+            } catch (e) {}
         }
         checkStatus();
+
+        // Switch channel
+        function switchChannel(channel) {
+            currentChannel = channel;
+            renderTabs();
+            refreshMessages();
+        }
+
+        // Render channel tabs
+        function renderTabs() {
+            const container = document.getElementById("channel-tabs");
+            // Collect all channels we know about
+            let tabs = ["general"];
+            // Add DM channels from peers list
+            peersList.forEach(p => {
+                if (p.name && p.name !== peerName) {
+                    const dmCh = "dm_" + p.name;
+                    if (!tabs.includes(dmCh)) tabs.push(dmCh);
+                }
+            });
+
+            container.innerHTML = tabs.map(ch => {
+                const label = ch === "general" ? "General (All)" : ch.replace("dm_", "DM: ");
+                const cls = ch === currentChannel ? "tab-btn active" : "tab-btn";
+                return '<button class="' + cls + '" onclick="switchChannel(\'' + ch + '\')">' + label + '</button>';
+            }).join("");
+
+            // Update label
+            const labelEl = document.getElementById("channel-label");
+            if (currentChannel === "general") {
+                labelEl.textContent = "Broadcast to ALL peers";
+            } else {
+                labelEl.textContent = "Direct P2P message to " + currentChannel.replace("dm_", "");
+            }
+        }
 
         // CONNECT
         async function doConnect() {
@@ -81,30 +144,55 @@
             const trackerPort = parseInt(document.getElementById("tracker-port").value);
 
             try {
-                // Register with tracker
                 const resp = await fetch(BASE + "/register", {
                     method: "POST",
                     headers: {"Content-Type": "application/json"},
                     body: JSON.stringify({tracker_ip: trackerIp, tracker_port: trackerPort})
                 });
-                
                 const data = await resp.json();
                 if (data.status === "error") {
                     document.getElementById("error").textContent = "Connection failed: " + data.message;
                     return;
                 }
 
-                // Show chat
                 document.getElementById("login-section").style.display = "none";
                 document.getElementById("chat-section").style.display = "block";
-                
+
+                refreshPeers();
                 refreshMessages();
-                
-                // Auto-refresh messages every 2s
+                renderTabs();
+
                 setInterval(refreshMessages, 2000);
+                setInterval(refreshPeers, 5000);
             } catch (e) {
                 document.getElementById("error").textContent = "Connection error: " + e.message;
             }
+        }
+
+        // GET ONLINE PEERS
+        async function refreshPeers() {
+            try {
+                const resp = await fetch(BASE + "/peers");
+                const data = await resp.json();
+                peersList = data.peers || [];
+                const container = document.getElementById("peers-list");
+                if (peersList.length === 0) {
+                    container.textContent = "No peers online";
+                } else {
+                    container.innerHTML = peersList.map(p => {
+                        const name = p.name || (p.ip + ':' + p.port);
+                        const isMe = (name === peerName);
+                        const dmCh = "dm_" + name;
+                        const isActive = (currentChannel === dmCh);
+                        if (isMe) {
+                            return '<span class="peer-badge me">' + name + ' (you)</span>';
+                        } else {
+                            return '<span class="peer-badge' + (isActive ? ' active' : '') + '" onclick="switchChannel(\'dm_' + name + '\')">' + name + '</span>';
+                        }
+                    }).join("");
+                }
+                renderTabs();
+            } catch (e) {}
         }
 
         // GET MESSAGES
@@ -112,23 +200,37 @@
             try {
                 const resp = await fetch(BASE + "/messages");
                 const data = await resp.json();
-                const msgs = data.channels ? (data.channels.general || []) : [];
-                
+                const allChannels = data.channels || {};
+                const msgs = allChannels[currentChannel] || [];
+
                 const container = document.getElementById("messages");
                 container.innerHTML = "";
-                msgs.forEach(m => {
-                    const div = document.createElement("div");
-                    div.className = "msg";
-                    const time = m.time || "";
-                    div.innerHTML = '<span class="from">' + (m.from || "unknown") + ':</span> '
-                                  + (m.msg || "")
-                                  + '<span class="time">' + time + '</span>';
-                    container.appendChild(div);
-                });
+                if (msgs.length === 0) {
+                    container.innerHTML = '<div style="color:#999;text-align:center;margin-top:20px;">No messages yet</div>';
+                } else {
+                    msgs.forEach(m => {
+                        const div = document.createElement("div");
+                        const sender = m.from || "unknown";
+                        const isMine = (sender === peerName);
+                        div.className = "msg " + (isMine ? "mine" : "other");
+                        div.innerHTML = '<div class="from">' + sender + '</div>'
+                                      + '<div class="text">' + (m.msg || "") + '</div>'
+                                      + '<div class="time">' + (m.time || "") + '</div>';
+                        container.appendChild(div);
+                    });
+                }
                 container.scrollTop = container.scrollHeight;
             } catch (e) {
-                // silently ignore
+                // Connection lost - show reconnect
+                showReconnect();
             }
+        }
+
+        // Show reconnect UI when server restarts
+        function showReconnect() {
+            document.getElementById("chat-section").style.display = "none";
+            document.getElementById("login-section").style.display = "block";
+            document.getElementById("error").textContent = "Connection lost. Please click Connect again.";
         }
 
         // SEND MESSAGE
@@ -138,19 +240,43 @@
             if (!msg) return;
 
             try {
-                await fetch(BASE + "/broadcast", {
-                    method: "POST",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({
-                        msg: msg,
-                        channel: "general",
-                        time: new Date().toLocaleTimeString()
-                    })
-                });
+                if (currentChannel === "general") {
+                    // Broadcast to all peers
+                    await fetch(BASE + "/broadcast", {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({
+                            msg: msg,
+                            channel: "general",
+                            time: new Date().toLocaleTimeString()
+                        })
+                    });
+                } else {
+                    // Direct P2P message - refresh peers list first
+                    await refreshPeers();
+                    const targetName = currentChannel.replace("dm_", "");
+                    const target = peersList.find(p => p.name === targetName);
+                    if (!target) {
+                        alert("Peer '" + targetName + "' is offline. Please wait for them to reconnect.");
+                        return;
+                    }
+
+                    await fetch(BASE + "/send", {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({
+                            msg: msg,
+                            target_ip: target.ip,
+                            target_port: target.port,
+                            target_name: targetName,
+                            time: new Date().toLocaleTimeString()
+                        })
+                    });
+                }
                 input.value = "";
                 refreshMessages();
             } catch (e) {
-                alert("Send failed: " + e.message);
+                alert("Send failed. Is the server running?");
             }
         }
     </script>
